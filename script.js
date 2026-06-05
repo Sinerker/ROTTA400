@@ -1,3 +1,10 @@
+// Converte notação científica (ex: "7,89199E+12") para string inteira
+function normalizarCodigo(val) {
+  const s = String(val || "").trim().replace(",", ".");
+  if (!s || !/[Ee]/.test(s)) return s;
+  try { return BigInt(Math.round(Number(s))).toString(); } catch { return s; }
+}
+
 // Tenta carregar o CSV com o nome correto (com espaço ou underscore)
 const csvCandidates = ["embalagens com categorias.csv"];
 let dadosCSV = [];
@@ -36,7 +43,11 @@ async function carregarCSV() {
   dadosCSV = linhas.slice(1).map((linha) => {
     const valores = linha.split(";").map((v) => v.trim());
     const item = {};
-    cabecalho.forEach((chave, i) => (item[chave] = valores[i] || ""));
+    cabecalho.forEach((chave, i) => {
+      item[chave] = chave === "CODACESSO"
+        ? normalizarCodigo(valores[i])
+        : (valores[i] || "");
+    });
     return item;
   });
 

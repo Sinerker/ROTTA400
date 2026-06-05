@@ -2,6 +2,12 @@
    contagens-exportar.js — exportação CSV + TXT
    ============================================= */
 
+function normalizarCodigoExport(val) {
+  const s = String(val || "").trim().replace(",", ".");
+  if (!s || !/[Ee]/.test(s)) return s;
+  try { return BigInt(Math.round(Number(s))).toString(); } catch { return s; }
+}
+
 async function openDBExport(name) {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(name);
@@ -55,7 +61,7 @@ async function exportarContagens() {
         dStr, hStr,
         (r.tipoContagem || "").toUpperCase(),
         (r.seqproduto   || "").toString().toUpperCase(),
-        (r.codacesso    || "").toString().toUpperCase(),
+        normalizarCodigoExport(r.codacesso).toUpperCase(),
         (r.desccompleta || "").toString().toUpperCase(),
         (r.qtdeembalagem|| "").toString().toUpperCase(),
         (r.quantidade   || "").toString().toUpperCase(),
