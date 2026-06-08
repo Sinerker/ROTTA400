@@ -6,7 +6,10 @@ function normalizarCodigo(val) {
 }
 
 // Tenta carregar o CSV com o nome correto (com espaço ou underscore)
-const csvCandidates = ["embalagens com categorias.csv"];
+const csvCandidates = [
+  "https://raw.githubusercontent.com/Sinerker/InventarioPostos/master/embalagens%20com%20categorias.csv",
+  "embalagens com categorias.csv",
+];
 let dadosCSV = [];
 let todosCodigosCSV = new Set();
 
