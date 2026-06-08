@@ -5,124 +5,74 @@
 let loteAtivoNome = null; // lote selecionado para continuar
 
 // -----------------------------------------------
-// IndexedDB helpers
+// IndexedDB — versão 2 com índice em loteNome
 // -----------------------------------------------
-function openOrUpgradeDB() {
+function abrirDB() {
   return new Promise((resolve, reject) => {
-    let req = indexedDB.open("InventarioDB");
+    const req = indexedDB.open("InventarioDB", 2);
 
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
+
       if (!db.objectStoreNames.contains("lotes")) {
         db.createObjectStore("lotes", { keyPath: "nome" });
       }
+
       if (!db.objectStoreNames.contains("contagens")) {
-        db.createObjectStore("contagens", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
+        const store = db.createObjectStore("contagens", { keyPath: "id", autoIncrement: true });
+        store.createIndex("loteNome", "loteNome", { unique: false });
+      } else if (e.oldVersion < 2) {
+        const store = e.target.transaction.objectStore("contagens");
+        if (!store.indexNames.contains("loteNome")) {
+          store.createIndex("loteNome", "loteNome", { unique: false });
+        }
       }
     };
 
-    req.onsuccess = (e) => {
-      const db = e.target.result;
-      const precisaUpgrade =
-        !db.objectStoreNames.contains("lotes") ||
-        !db.objectStoreNames.contains("contagens");
-
-      if (precisaUpgrade) {
-        const v = db.version + 1;
-        db.close();
-        const up = indexedDB.open("InventarioDB", v);
-        up.onupgradeneeded = (ev) => {
-          const d = ev.target.result;
-          if (!d.objectStoreNames.contains("lotes"))
-            d.createObjectStore("lotes", { keyPath: "nome" });
-          if (!d.objectStoreNames.contains("contagens"))
-            d.createObjectStore("contagens", {
-              keyPath: "id",
-              autoIncrement: true,
-            });
-        };
-        up.onsuccess = (ev) => resolve(ev.target.result);
-        up.onerror = (ev) => reject(ev.target.error);
-      } else {
-        resolve(db);
-      }
-    };
-
+    req.onsuccess = (e) => resolve(e.target.result);
     req.onerror = (e) => reject(e.target.error);
   });
 }
 
 // Busca todos os lotes
 async function getLotes() {
-  const db = await openOrUpgradeDB();
+  const db = await abrirDB();
   return new Promise((resolve) => {
     const tx = db.transaction(["lotes"], "readonly");
-    const store = tx.objectStore("lotes");
-    const req = store.getAll();
-    req.onsuccess = () => {
-      db.close();
-      resolve(req.result || []);
-    };
-    req.onerror = () => {
-      db.close();
-      resolve([]);
-    };
+    const req = tx.objectStore("lotes").getAll();
+    req.onsuccess = () => { db.close(); resolve(req.result || []); };
+    req.onerror = () => { db.close(); resolve([]); };
   });
 }
 
-// Busca contagens de um lote
+// Busca contagens de um lote usando o índice (mais eficiente)
 async function getContagensDoLote(loteNome) {
-  const db = await openOrUpgradeDB();
-  if (!db.objectStoreNames.contains("contagens")) {
-    db.close();
-    return [];
-  }
+  const db = await abrirDB();
+  if (!db.objectStoreNames.contains("contagens")) { db.close(); return []; }
   return new Promise((resolve) => {
     const tx = db.transaction(["contagens"], "readonly");
-    const store = tx.objectStore("contagens");
-    const req = store.getAll();
-    req.onsuccess = () => {
-      db.close();
-      const todos = req.result || [];
-      resolve(todos.filter((r) => r.loteNome === loteNome));
-    };
-    req.onerror = () => {
-      db.close();
-      resolve([]);
-    };
+    const req = tx.objectStore("contagens").index("loteNome").getAll(loteNome);
+    req.onsuccess = () => { db.close(); resolve(req.result || []); };
+    req.onerror = () => { db.close(); resolve([]); };
   });
 }
 
 // Deleta um lote e suas contagens
 async function deletarLote(loteNome) {
-  const db = await openOrUpgradeDB();
+  const db = await abrirDB();
   return new Promise((resolve) => {
     const tx = db.transaction(["lotes", "contagens"], "readwrite");
 
-    // Remove o lote
     tx.objectStore("lotes").delete(loteNome);
 
-    // Remove contagens vinculadas
     const storeC = tx.objectStore("contagens");
-    const reqAll = storeC.getAll();
+    const reqAll = storeC.index("loteNome").getAll(loteNome);
     reqAll.onsuccess = () => {
-      const ids = (reqAll.result || [])
-        .filter((r) => r.loteNome === loteNome)
-        .map((r) => r.id);
-      ids.forEach((id) => storeC.delete(id));
+      (reqAll.result || []).forEach((r) => storeC.delete(r.id));
     };
 
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-    tx.onerror = () => {
-      db.close();
-      resolve();
-    };
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); resolve(); };
   });
 }
 
@@ -267,7 +217,7 @@ async function renderizarLotes() {
 // Modal de produtos do lote
 // -----------------------------------------------
 async function abrirModalProdutos(loteNome, abaInicial = "dentro") {
-  const db = await openOrUpgradeDB();
+  const db = await abrirDB();
   const lote = await new Promise((resolve) => {
     const tx = db.transaction(["lotes"], "readonly");
     const req = tx.objectStore("lotes").get(loteNome);
@@ -489,7 +439,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnCriar.textContent = "Salvando...";
 
     try {
-      const db = await openOrUpgradeDB();
+      const db = await abrirDB();
       const tx = db.transaction(["lotes"], "readwrite");
 
       const reqPut = tx.objectStore("lotes").put({
